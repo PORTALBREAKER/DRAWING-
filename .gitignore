@@ -1,0 +1,6 @@
+# Ad-hoc test photos fetched during development (third-party stock images -
+# not ours to redistribute) and the annotated outputs produced by
+# app/scripts/visualizeDetection.ts / testFaceDetection.ts. Regenerate them
+# locally with `npm run visualize -- your-own-photo.jpg` instead.
+/image-search/
+/verification/

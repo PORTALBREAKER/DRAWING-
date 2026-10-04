@@ -9,7 +9,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test:construction": "tsx scripts/testConstruction.ts",
-    "test:face": "tsx scripts/testFaceDetection.ts"
+    "test:face": "tsx scripts/testFaceDetection.ts",
+    "visualize": "tsx scripts/visualizeDetection.ts"
   },
   "dependencies": {
     "@fontsource/fredoka": "^5.3.0",
