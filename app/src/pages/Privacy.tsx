@@ -12,12 +12,12 @@ const POINTS = [
   {
     title: "No accounts, no tracking",
     body:
-      "There's no login, no analytics pixels, and no third-party trackers. The only outbound network requests are one-time, anonymous downloads of the open-source vision model files and web fonts from their public CDNs.",
+      "There's no login, no analytics pixels, and no third-party trackers. Face detection, its model files, and the app's fonts are all bundled into this app's own build - they load from the same origin as everything else, not a third-party CDN.",
   },
   {
     title: "Third-party requests, listed in full",
     body:
-      "(1) cdn.jsdelivr.net - MediaPipe's WASM runtime. (2) storage.googleapis.com - MediaPipe's model weights. (3) fonts.googleapis.com / fonts.gstatic.com - the Fredoka and Inter web fonts. None of these receive your image data; they only serve static files.",
+      "Only one optional feature reaches outside this app: a best-effort attempt to fetch Google's open-source MediaPipe Pose Landmarker model (from cdn.jsdelivr.net and storage.googleapis.com) to improve body-pose accuracy for half-body/full-body tutorials. If that can't be reached - offline, blocked network, etc. - the app automatically falls back to proportion-based body construction with no loss of core functionality, and tells you which method was used. None of these requests ever receive your image data; they only serve static model files.",
   },
   {
     title: "Exports stay on your device",

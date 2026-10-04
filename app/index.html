@@ -7,12 +7,11 @@
     <meta name="theme-color" content="#141019" />
     <meta name="description" content="DrawForge turns any reference photo into a beginner-friendly, step-by-step Loomis-style drawing tutorial - free, private, and processed in your browser." />
     <title>DrawForge - Turn Any Image Into a Drawing Lesson</title>
+    <!-- Only the optional body-pose enhancement needs the network; fonts and
+         face detection are bundled into this app's own build (see main.tsx
+         and lib/analysis/faceApiEngine.ts). -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link rel="preconnect" href="https://storage.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>

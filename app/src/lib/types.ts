@@ -57,7 +57,10 @@ export interface ImageAnalysis {
   imageHeight: number;
   faceDetected: boolean;
   faceCount: number;
+  /** true only when a real pose-detection model found joints (never the proportional estimate) */
   poseDetected: boolean;
+  /** true when `pose` was synthesized via classical proportion rules rather than detected */
+  poseEstimated?: boolean;
   face?: FaceLandmarks;
   pose?: PoseLandmarks;
   /** -1 (turned left) .. 1 (turned right), 0 = frontal */

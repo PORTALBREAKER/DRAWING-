@@ -97,53 +97,88 @@ project's architecture requirement - see "Swapping the AI model" below.
 
 | Task | Model | License | Where it runs | Cost |
 |---|---|---|---|---|
-| Face landmark detection (468/478 points) | Google **MediaPipe Face Landmarker** | Apache-2.0 | 100% on-device (WebAssembly) | $0, no key |
-| Body pose detection (33 points) | Google **MediaPipe Pose Landmarker (lite)** | Apache-2.0 | 100% on-device (WebAssembly) | $0, no key |
+| Face detection + 68-point landmarks | **@vladmandic/face-api** (TinyFaceDetector + FaceLandmark68Net) | MIT | 100% on-device (TensorFlow.js), **self-hosted - weights ship inside this app's own build** | $0, no key, no network ever needed |
+| Body pose (joint positions) | Classical **Loomis/Bridgman figure-proportion construction**, anchored on the detected face | Public-domain drawing technique | 100% on-device, pure math, zero network | $0 |
+| Body pose *enhancement* (optional) | Google **MediaPipe Pose Landmarker (lite)** | Apache-2.0 | 100% on-device (WebAssembly), fetched from a public CDN on first use | $0, no key |
 
-Both are downloaded straight from Google's public, unauthenticated hosting
-(`cdn.jsdelivr.net` for the WASM runtime, `storage.googleapis.com` for the
-model weights) the first time a user generates a tutorial, then cached by the
-browser. **No API key, no account, no quota, no paid tier, no per-request
-billing exists for this pipeline.** The app never calls a server endpoint of
-ours, because there isn't one - everything after "download the model files
-once" runs fully offline.
+**Why face detection is fully self-hosted:** `@vladmandic/face-api` is an npm
+package that bundles its real model weight files directly inside the
+package itself (`tiny_face_detector_model.bin`, `face_landmark_68_model.bin`
+- about 550KB combined). Those files are copied into `app/public/models/` and
+served from this app's own origin, so face detection **never depends on any
+third-party server, CDN, or API being reachable - not even on first load.**
+This was verified with real headless inference against real photos during
+development (`npm run test:face`, see below) - not just checked against
+documentation.
+
+**Why body pose uses a hybrid approach:** no free, npm-installable body-pose
+package ships its model weights inside the package (checked
+`@tensorflow-models/posenet` and others - they all fetch weights from a
+remote URL at runtime, same as MediaPipe). Rather than leave body
+construction unavailable offline, or silently fake a "detection" that never
+happened, DrawForge uses the same proportion rules professional figure-
+drawing instructors teach (adult figures are ~7.5-8 head-heights tall,
+shoulders sit ~half a head below the chin, wrists hang level with the hips,
+etc.), anchored on the real, detected face. This is a genuine, long-
+established construction technique - not a guess - and it always works,
+offline included. If a network connection *is* available, DrawForge also
+attempts Google's free MediaPipe Pose Landmarker for real joint detection as
+a best-effort accuracy enhancement, and is explicit in the on-screen warnings
+about which method actually produced a given body construction - per this
+project's "don't fake it" rule.
 
 ### Complete list of every external dependency
 
 | Dependency | Purpose | Cost |
 |---|---|---|
-| `@mediapipe/tasks-vision` (npm) + its WASM/model downloads | Face + pose landmark detection | Free, open-source |
+| `@vladmandic/face-api` (npm, self-hosted weights in `/public/models`) | Face detection + 68-point landmarks | Free, open-source, no network dependency |
+| `@mediapipe/tasks-vision` (npm) + its optional WASM/model download | Best-effort body-pose enhancement only | Free, open-source |
 | `react`, `react-dom`, `react-router-dom` | UI framework / routing | Free, open-source |
 | `zustand` | Small state store | Free, open-source |
 | `react-easy-crop` | Crop/rotate UI | Free, open-source |
 | `jspdf` | Client-side PDF export | Free, open-source |
 | `tailwindcss` / `@tailwindcss/vite` | Styling | Free, open-source |
-| Google Fonts (`Fredoka`, `Inter`) | Web fonts | Free, static files |
+| `@fontsource/fredoka`, `@fontsource/inter` (self-hosted) | Web fonts, bundled into the build | Free, open-source, no network dependency |
 
 No paid APIs, no credit-based APIs, no trial-only services, nothing that
 requires a credit card, anywhere in this stack.
 
 ### What works fully offline vs. what needs the internet
 
-- **Needs internet, once:** the very first time a browser uses DrawForge, it
-  downloads the MediaPipe WASM runtime + model files (a few MB total) and the
-  two Google Fonts. These are normal browser-cached static files.
-- **Fully offline after that:** image upload, crop/rotate, face/pose analysis,
-  Loomis construction, stage generation, rendering, practice mode (zoom/pan/
-  draw), and PNG/PDF export all run with zero network calls.
+- **Always fully offline, even on first load:** image upload, crop/rotate,
+  face detection + landmarks, proportion-based body construction, Loomis
+  construction, stage generation, rendering, practice mode (zoom/pan/draw),
+  and PNG/PDF export. Fonts and the face model are bundled into the app
+  itself, not fetched from any CDN.
+- **Needs internet (optional, best-effort only):** a one-time download of the
+  MediaPipe Pose Landmarker (WASM + model, a few MB) purely to improve body
+  *joint* accuracy for half-body/full-body tutorials. If unreachable, the app
+  automatically and silently falls back to the proportion-based estimate
+  above with no loss of core functionality.
+
+### Verifying the AI actually works (not just "looks right" in code)
+
+This isn't something you have to take on faith - `npm run test:face -- /path/to/a/photo.jpg`
+runs the exact model files this app ships, against a real photo you provide,
+through the real detection + landmark-mapping + construction code paths (not
+mocked data), and prints pass/fail sanity checks (jaw geometry, eye
+separation, anatomically-ordered body proportions, etc.). `npm run
+test:construction` is a separate, faster regression test that checks the
+Construction Engine/Step Generator logic against synthetic landmark data.
 
 ### Swapping the AI model later
 
 The `lib/analysis` folder is the *only* place that talks to a vision model.
 To replace it (e.g. with a future, better free/open-source model, or a
-self-hosted model if you ever want one):
+different self-hosted model):
 
 1. Implement a function that returns the same `ImageAnalysis` shape defined in
    `src/lib/types.ts` (face/pose landmarks as normalized `{x, y}` points).
 2. Swap the implementation inside `analyzeImage()` in
    `src/lib/analysis/analyzeImage.ts` - everything downstream (the
    Construction Engine, Step Generator, and Renderer) is written against that
-   type, not against MediaPipe directly, so nothing else needs to change.
+   type, not against face-api or MediaPipe directly, so nothing else needs to
+   change.
 
 ---
 
@@ -166,7 +201,8 @@ Other scripts:
 ```bash
 npm run build             # type-check + production build into app/dist
 npm run preview           # serve the production build locally
-npm run test:construction # headless regression test for the construction/step engine
+npm run test:construction # headless regression test for the construction/step engine (synthetic data)
+npm run test:face -- photo.jpg # real-inference regression test against an actual photo
 npm run lint               # oxlint
 ```
 
@@ -227,9 +263,14 @@ Examples / Open App / Feedback) that links out to the embedded app.
 - Hair and clothing are intentionally rendered as simplified construction
   shapes (as a drawing teacher would sketch them), not pixel-traced from the
   photo - this is a deliberate teaching choice, not a shortcut.
-- The pose model (`pose_landmarker_lite`) is the free, lightweight MediaPipe
-  variant tuned for speed on weaker devices; it is slightly less precise than
-  the heavier variants Google also publishes.
+- Body-pose joints are estimated from classical figure-drawing proportions
+  anchored on the detected face unless the optional MediaPipe enhancement is
+  reachable; the proportion estimate assumes a natural standing pose and may
+  not match an unusual pose exactly - the app discloses in its warnings
+  whenever this estimate (rather than real detection) was used.
+- The optional pose model (`pose_landmarker_lite`) is the free, lightweight
+  MediaPipe variant tuned for speed on weaker devices; it is slightly less
+  precise than the heavier variants Google also publishes.
 - Images are downscaled before analysis (max ~1280px) to keep things fast on
   low-end Android phones; this is a deliberate performance trade-off.
 

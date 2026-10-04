@@ -2,7 +2,8 @@ import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Suspense, lazy, useEffect } from "react";
 import Layout from "./components/Layout";
 import Home from "./pages/Home";
-import { preloadVisionModels } from "./lib/analysis/visionModels";
+import { preloadPoseModel } from "./lib/analysis/visionModels";
+import { preloadFaceApiModels } from "./lib/analysis/faceApiEngine";
 
 const Create = lazy(() => import("./pages/Create"));
 const TutorialViewer = lazy(() => import("./pages/TutorialViewer"));
@@ -30,8 +31,12 @@ export default function App() {
     // Warm up the free on-device vision models in the background the first
     // time someone opens the app, so Create -> Generate feels instant later.
     const idle = (window as typeof window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
-    if (idle) idle(() => preloadVisionModels());
-    else setTimeout(preloadVisionModels, 1200);
+    const preloadAll = () => {
+      preloadFaceApiModels();
+      preloadPoseModel();
+    };
+    if (idle) idle(preloadAll);
+    else setTimeout(preloadAll, 1200);
   }, []);
 
   return (

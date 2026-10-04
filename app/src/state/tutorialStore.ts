@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { DrawingStyle, DrawingType, ImageAnalysis, Stage } from "../lib/types";
 import { analyzeImage, AnalysisError } from "../lib/analysis/analyzeImage";
+import { estimateProportionalPose } from "../lib/analysis/proportionalPose";
 import { buildConstructionModel } from "../lib/construction/loomisEngine";
 import { generateStages } from "../lib/construction/stageGenerator";
 import { loadImageFromDataUrl, resizeToDataUrl } from "../lib/imageUtils";
@@ -140,6 +141,18 @@ export const useTutorialStore = create<TutorialState>((set, get) => ({
       }
 
       let effectiveType = type;
+
+      // The proportional pose fallback is style-dependent (chibi vs. realistic
+      // head-to-body ratios), but analysis ran before the final style/type
+      // were known - refit it now with the values the user actually chose.
+      if (finalAnalysis.poseEstimated && finalAnalysis.face && (effectiveType === "half-body" || effectiveType === "full-body")) {
+        finalAnalysis = {
+          ...finalAnalysis,
+          pose: estimateProportionalPose(finalAnalysis.face, style, effectiveType),
+        };
+        set({ analysis: finalAnalysis });
+      }
+
       if ((type === "half-body" || type === "full-body") && !finalAnalysis.pose) {
         effectiveType = finalAnalysis.face ? "portrait" : "face";
         finalAnalysis = {

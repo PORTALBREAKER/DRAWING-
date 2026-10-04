@@ -1,17 +1,17 @@
-import type { NormalizedLandmark } from "@mediapipe/tasks-vision";
 import type { FaceLandmarks, Point } from "../types";
+import type { RawFaceDetection } from "./faceApiEngine";
 import {
   CHIN,
-  FOREHEAD_TOP,
+  JAW,
   LEFT_CHEEK,
   LEFT_EYE,
   LEFT_EYEBROW,
   LEFT_TEMPLE,
-  LIPS_INNER,
-  LIPS_OUTER,
-  MOUTH_LEFT,
-  MOUTH_RIGHT,
-  NOSE_BASE,
+  MOUTH_INNER,
+  MOUTH_LEFT_CORNER,
+  MOUTH_OUTER,
+  MOUTH_RIGHT_CORNER,
+  NOSE_BASE_CENTER,
   NOSE_BRIDGE,
   NOSE_TIP,
   RIGHT_CHEEK,
@@ -20,12 +20,12 @@ import {
   RIGHT_TEMPLE,
 } from "./landmarkIndices";
 
-function pick(landmarks: NormalizedLandmark[], indices: number[]): Point[] {
-  return indices.map((i) => ({ x: landmarks[i].x, y: landmarks[i].y }));
+function pick(points: Point[], indices: number[]): Point[] {
+  return indices.map((i) => points[i]);
 }
 
-function one(landmarks: NormalizedLandmark[], index: number): Point {
-  return { x: landmarks[index].x, y: landmarks[index].y };
+function one(points: Point[], index: number): Point {
+  return points[index];
 }
 
 function average(points: Point[]): Point {
@@ -33,34 +33,91 @@ function average(points: Point[]): Point {
   return { x: sum.x / points.length, y: sum.y / points.length };
 }
 
-export function buildFaceLandmarks(landmarks: NormalizedLandmark[]): FaceLandmarks {
-  const leftEye = pick(landmarks, LEFT_EYE);
-  const rightEye = pick(landmarks, RIGHT_EYE);
+/** Quadratic-Bezier arc, used to synthesize a plausible skull curve above the
+ * hairline, since the 68-point scheme only covers the jaw and facial
+ * features (it has no forehead/scalp points to detect). */
+function quadraticArc(p0: Point, control: Point, p1: Point, steps: number): Point[] {
+  const pts: Point[] = [];
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const x = (1 - t) * (1 - t) * p0.x + 2 * (1 - t) * t * control.x + t * t * p1.x;
+    const y = (1 - t) * (1 - t) * p0.y + 2 * (1 - t) * t * control.y + t * t * p1.y;
+    pts.push({ x, y });
+  }
+  return pts;
+}
+
+/**
+ * Converts a raw 68-point dlib/iBUG detection (pixel space, from
+ * face-api.js) into the app's normalized, backend-agnostic FaceLandmarks
+ * shape. The 68-point scheme has no forehead/temple/hairline points, so
+ * those are estimated using the classical figure-drawing "equal thirds"
+ * rule (hairline-to-brow ~= brow-to-nose-base ~= nose-base-to-chin) -
+ * a genuine, long-established proportion rule, not a guess pulled from
+ * thin air, and clearly documented here so it can be refined later.
+ */
+export function buildFaceLandmarks(detection: RawFaceDetection, imageWidth: number, imageHeight: number): FaceLandmarks {
+  const px = detection.points;
+  const norm = (p: Point): Point => ({ x: p.x / imageWidth, y: p.y / imageHeight });
+  const normAll = (pts: Point[]): Point[] => pts.map(norm);
+
+  const jaw = pick(px, JAW);
+  const rightEyebrow = pick(px, RIGHT_EYEBROW);
+  const leftEyebrow = pick(px, LEFT_EYEBROW);
+  const chin = one(px, CHIN);
+  const rightTemple = one(px, RIGHT_TEMPLE);
+  const leftTemple = one(px, LEFT_TEMPLE);
+  const noseBaseCenter = one(px, NOSE_BASE_CENTER);
+
+  const browY = average([...rightEyebrow, ...leftEyebrow]).y;
+  const unitLower = chin.y - noseBaseCenter.y; // nose-base to chin
+  const unitMiddle = noseBaseCenter.y - browY; // brow to nose-base
+  const unit = (Math.abs(unitLower) + Math.abs(unitMiddle)) / 2 || Math.abs(unitLower) || 20;
+  const foreheadTopPx: Point = {
+    x: (rightTemple.x + leftTemple.x) / 2,
+    y: browY - unit,
+  };
+
+  // Synthesize the scalp arc (no real landmarks exist above the brow), so the
+  // full head outline closes into one continuous, natural-looking loop.
+  const upperRight = quadraticArc(
+    leftTemple,
+    { x: foreheadTopPx.x + (leftTemple.x - foreheadTopPx.x) * 0.55, y: foreheadTopPx.y - unit * 0.05 },
+    foreheadTopPx,
+    5,
+  );
+  const upperLeft = quadraticArc(
+    foreheadTopPx,
+    { x: foreheadTopPx.x + (rightTemple.x - foreheadTopPx.x) * 0.55, y: foreheadTopPx.y - unit * 0.05 },
+    rightTemple,
+    5,
+  );
+  const faceOvalPx: Point[] = [...jaw, ...upperRight, foreheadTopPx, ...upperLeft];
+
+  const rightEye = pick(px, RIGHT_EYE);
+  const leftEye = pick(px, LEFT_EYE);
+
   return {
-    faceOval: pick(landmarks, [
-      10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365,
-      379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93,
-      234, 127, 162, 21, 54, 103, 67, 109,
-    ]),
-    leftEye,
-    rightEye,
-    leftEyebrow: pick(landmarks, LEFT_EYEBROW),
-    rightEyebrow: pick(landmarks, RIGHT_EYEBROW),
-    lipsOuter: pick(landmarks, LIPS_OUTER),
-    lipsInner: pick(landmarks, LIPS_INNER),
-    noseBridge: pick(landmarks, NOSE_BRIDGE),
-    noseTip: one(landmarks, NOSE_TIP),
-    noseBase: one(landmarks, NOSE_BASE),
-    chin: one(landmarks, CHIN),
-    foreheadTop: one(landmarks, FOREHEAD_TOP),
-    leftCheek: one(landmarks, LEFT_CHEEK),
-    rightCheek: one(landmarks, RIGHT_CHEEK),
-    leftTemple: one(landmarks, LEFT_TEMPLE),
-    rightTemple: one(landmarks, RIGHT_TEMPLE),
-    leftEyeCenter: average(leftEye),
-    rightEyeCenter: average(rightEye),
-    mouthLeft: one(landmarks, MOUTH_LEFT),
-    mouthRight: one(landmarks, MOUTH_RIGHT),
+    faceOval: normAll(faceOvalPx),
+    leftEye: normAll(leftEye),
+    rightEye: normAll(rightEye),
+    leftEyebrow: normAll(leftEyebrow),
+    rightEyebrow: normAll(rightEyebrow),
+    lipsOuter: normAll(pick(px, MOUTH_OUTER)),
+    lipsInner: normAll(pick(px, MOUTH_INNER)),
+    noseBridge: normAll(pick(px, NOSE_BRIDGE)),
+    noseTip: norm(one(px, NOSE_TIP)),
+    noseBase: norm(noseBaseCenter),
+    chin: norm(chin),
+    foreheadTop: norm(foreheadTopPx),
+    leftCheek: norm(one(px, LEFT_CHEEK)),
+    rightCheek: norm(one(px, RIGHT_CHEEK)),
+    leftTemple: norm(leftTemple),
+    rightTemple: norm(rightTemple),
+    leftEyeCenter: norm(average(leftEye)),
+    rightEyeCenter: norm(average(rightEye)),
+    mouthLeft: norm(one(px, MOUTH_LEFT_CORNER)),
+    mouthRight: norm(one(px, MOUTH_RIGHT_CORNER)),
   };
 }
 
@@ -70,4 +127,10 @@ export function estimateYaw(face: FaceLandmarks): number {
   const noseCenterX = (face.leftTemple.x + face.rightTemple.x) / 2;
   const offset = (face.noseTip.x - noseCenterX) / (faceWidth / 2);
   return Math.max(-1, Math.min(1, offset));
+}
+
+/** Bounding-box area in pixel space, used to pick the most prominent face
+ * when several are detected. */
+export function detectionArea(detection: RawFaceDetection): number {
+  return detection.box.width * detection.box.height;
 }
